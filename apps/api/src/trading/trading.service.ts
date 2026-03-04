@@ -359,14 +359,28 @@ export class TradingService {
       const existingPending = await this.prisma.signerRequest.findFirst({
         where: {
           userId,
-          status: SignerRequestStatus.PENDING,
-          expiresAt: {
-            gt: new Date(),
-          },
-          order: {
-            strategyId: strategy.id,
-            marketId: params.market_id,
-          },
+          OR: [
+            {
+              status: {
+                in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+              },
+              expiresAt: {
+                gt: new Date(),
+              },
+              order: {
+                strategyId: strategy.id,
+                marketId: params.market_id,
+              },
+            },
+            {
+              status: SignerRequestStatus.SIGNED,
+              executedAt: null,
+              order: {
+                strategyId: strategy.id,
+                marketId: params.market_id,
+              },
+            },
+          ],
         },
         select: {
           requestId: true,
@@ -560,22 +574,51 @@ export class TradingService {
     jumpPct1m: number;
   }): Promise<RiskGateEvaluation> {
     const equity = toNumber(input.riskConfig.equity);
-    const positions = await this.prisma.position.findMany({
-      where: {
-        userId: input.userId,
-      },
-    });
+    const [positions, openOrders] = await Promise.all([
+      this.prisma.position.findMany({
+        where: {
+          userId: input.userId,
+        },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          userId: input.userId,
+          status: {
+            in: [
+              OrderStatus.PENDING_SIGN,
+              OrderStatus.SIGNED,
+              OrderStatus.SUBMITTED,
+              OrderStatus.ACK,
+              OrderStatus.PARTIAL_FILLED,
+            ],
+          },
+        },
+      }),
+    ]);
 
-    const marketExposure = sum(
+    const positionMarketExposure = sum(
       positions
         .filter((position) => position.marketId === input.marketId)
         .map((position) => Math.abs(toNumber(position.notional))),
     );
-    const totalExposure = sum(positions.map((position) => Math.abs(toNumber(position.notional))));
+    const positionTotalExposure = sum(positions.map((position) => Math.abs(toNumber(position.notional))));
+    const openOrderMarketExposure = sum(
+      openOrders
+        .filter((order) => order.marketId === input.marketId)
+        .map((order) => Math.abs(toNumber(order.notional))),
+    );
+    const openOrderTotalExposure = sum(openOrders.map((order) => Math.abs(toNumber(order.notional))));
+    const marketExposure = positionMarketExposure + openOrderMarketExposure;
+    const totalExposure = positionTotalExposure + openOrderTotalExposure;
     const openMarketCount = new Set(
-      positions
-        .filter((position) => Math.abs(toNumber(position.notional)) > 0)
-        .map((position) => position.marketId),
+      [
+        ...positions
+          .filter((position) => Math.abs(toNumber(position.notional)) > 0)
+          .map((position) => position.marketId),
+        ...openOrders
+          .filter((order) => Math.abs(toNumber(order.notional)) > 0)
+          .map((order) => order.marketId),
+      ],
     ).size;
 
     const totalPnl = sum(

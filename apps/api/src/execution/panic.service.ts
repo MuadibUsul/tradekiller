@@ -4,6 +4,7 @@ import {
   AuditActorType,
   OrderStatus,
   Prisma,
+  SignerRequestStatus,
   StrategyStatus,
 } from '@prisma/client';
 import { InMemoryBrokerAdapter } from './broker.adapter';
@@ -28,7 +29,12 @@ export class PanicService {
   async stopAll(
     userId: string,
     reason: string,
-  ): Promise<{ canceled_orders: number; paused_strategies: number; broker_canceled: number }> {
+  ): Promise<{
+    canceled_orders: number;
+    paused_strategies: number;
+    canceled_signer_requests: number;
+    broker_canceled: number;
+  }> {
     const brokerCanceled = await this.broker.cancelAll(userId);
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -56,6 +62,30 @@ export class PanicService {
         },
       });
 
+      const canceledSignerRequests = await tx.signerRequest.updateMany({
+        where: {
+          userId,
+          OR: [
+            {
+              status: SignerRequestStatus.PENDING,
+            },
+            {
+              status: SignerRequestStatus.DELIVERED,
+            },
+            {
+              status: SignerRequestStatus.SIGNED,
+              executedAt: null,
+            },
+          ],
+        },
+        data: {
+          status: SignerRequestStatus.FAILED,
+          denyReason: reason,
+          respondedAt: new Date(),
+          executionError: reason,
+        },
+      });
+
       await tx.auditLog.createMany({
         data: [
           {
@@ -80,12 +110,24 @@ export class PanicService {
               paused_count: pausedStrategies.count,
             } as Prisma.InputJsonObject,
           },
+          {
+            userId,
+            actorType: AuditActorType.SYSTEM,
+            action: AuditAction.ORDER_CANCEL,
+            resourceType: 'signer_request',
+            resourceId: userId,
+            metadata: {
+              reason,
+              canceled_count: canceledSignerRequests.count,
+            } as Prisma.InputJsonObject,
+          },
         ],
       });
 
       return {
         canceled_orders: canceledOrders.count,
         paused_strategies: pausedStrategies.count,
+        canceled_signer_requests: canceledSignerRequests.count,
       };
     });
 
@@ -95,4 +137,3 @@ export class PanicService {
     };
   }
 }
-

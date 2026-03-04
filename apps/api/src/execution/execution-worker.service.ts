@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { OrderStatus, SignerRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { InMemoryBrokerAdapter } from './broker.adapter';
 import { executeSignedRequestsOnce } from './execute-once';
@@ -39,6 +40,7 @@ export class ExecutionWorkerService implements OnModuleInit, OnModuleDestroy {
     this.running = true;
 
     try {
+      await this.expireStaleRequests();
       const result = await executeSignedRequestsOnce(this.prisma, this.broker, this.logger);
       return {
         tick_skipped: false,
@@ -47,5 +49,42 @@ export class ExecutionWorkerService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.running = false;
     }
+  }
+
+  private async expireStaleRequests(): Promise<void> {
+    const now = new Date();
+    const expired = await this.prisma.signerRequest.updateMany({
+      where: {
+        status: {
+          in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+        },
+        expiresAt: {
+          lte: now,
+        },
+      },
+      data: {
+        status: SignerRequestStatus.EXPIRED,
+        respondedAt: now,
+      },
+    });
+
+    if (expired.count === 0) {
+      return;
+    }
+
+    await this.prisma.order.updateMany({
+      where: {
+        signerRequest: {
+          status: SignerRequestStatus.EXPIRED,
+        },
+        status: {
+          in: [OrderStatus.PENDING_SIGN, OrderStatus.SIGNED],
+        },
+      },
+      data: {
+        status: OrderStatus.CANCELED,
+        rejectReason: 'signer_request_expired',
+      },
+    });
   }
 }

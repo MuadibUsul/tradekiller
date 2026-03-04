@@ -6,7 +6,7 @@
   "types": "dist/main.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx watch src/main.ts",
+    "dev": "ts-node-dev --respawn --transpile-only src/main.ts",
     "start": "node dist/main.js",
     "lint": "echo \"No lint configured for @pm-quant/signer-gateway\""
   },
@@ -28,6 +28,7 @@
     "@types/node": "^22.15.33",
     "@types/ws": "^8.18.1",
     "prisma": "^6.9.0",
+    "ts-node-dev": "^2.0.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3"
   }

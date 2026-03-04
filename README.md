@@ -35,6 +35,8 @@ Expected:
 - Signer gateway on `ws://localhost:4100/ws/signer`
 - Web dashboard on `http://localhost:3000`
 - Market worker logs `updated metrics=...` once whitelist entries exist.
+- CORS origins controlled by `WEB_CORS_ORIGINS` (default `http://localhost:3000`).
+- In `NODE_ENV=production`, default JWT secrets are rejected at startup.
 
 ## 3) End-to-End Milestone Flow
 
@@ -66,9 +68,10 @@ curl -X POST http://localhost:4000/api/panic/stop-all \
 Expected response includes:
 - `canceled_orders`
 - `paused_strategies`
+- `canceled_signer_requests`
 - `broker_canceled`
 
-After panic stop, strategies are paused and new signer requests are not produced.
+After panic stop, strategies are paused and pending signer requests are force-failed.
 
 ## 5) Exactly-Once Execution Lock Test
 
@@ -95,4 +98,3 @@ Routes:
 Note:
 - `Caddyfile` uses `tls internal` for local certificates.
 - For first run, trust Caddy local CA in your environment if needed.
-

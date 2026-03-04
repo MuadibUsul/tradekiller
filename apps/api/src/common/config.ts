@@ -15,14 +15,27 @@ export function getSignerCallbackUri(): string {
 }
 
 export function getWebJwtSecret(): string {
-  return process.env.WEB_JWT_SECRET ?? 'dev-web-jwt-secret';
+  const secret = process.env.WEB_JWT_SECRET ?? 'dev-web-jwt-secret';
+
+  if (process.env.NODE_ENV === 'production' && secret === 'dev-web-jwt-secret') {
+    throw new Error('WEB_JWT_SECRET must be set to a non-default value in production.');
+  }
+
+  return secret;
 }
 
 export function getDeviceJwtSecret(): string {
   const secret = process.env.DEVICE_JWT_SECRET;
 
   if (secret && secret.trim().length > 0) {
+    if (process.env.NODE_ENV === 'production' && secret === 'dev-device-jwt-secret') {
+      throw new Error('DEVICE_JWT_SECRET must be set to a non-default value in production.');
+    }
     return secret;
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('DEVICE_JWT_SECRET must be set in production.');
   }
 
   return 'dev-device-jwt-secret';

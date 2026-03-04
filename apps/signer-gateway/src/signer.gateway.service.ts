@@ -45,7 +45,14 @@ function getDeviceJwtSecret(): string {
   const secret = process.env.DEVICE_JWT_SECRET;
 
   if (!secret || secret.trim().length === 0) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('DEVICE_JWT_SECRET must be set in production.');
+    }
     return 'dev-device-jwt-secret';
+  }
+
+  if (process.env.NODE_ENV === 'production' && secret === 'dev-device-jwt-secret') {
+    throw new Error('DEVICE_JWT_SECRET must be set to a non-default value in production.');
   }
 
   return secret;
@@ -169,11 +176,20 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
         id: true,
         userId: true,
         role: true,
+        status: true,
       },
     });
 
     if (!device || device.userId !== claims.uid) {
       throw new WsCloseError(WS_CLOSE_CODES.UNAUTHORIZED, 'device_not_found');
+    }
+
+    if (device.status === DeviceStatus.REVOKED) {
+      throw new WsCloseError(WS_CLOSE_CODES.FORBIDDEN, 'device_revoked');
+    }
+
+    if (device.status === DeviceStatus.PENDING) {
+      throw new WsCloseError(WS_CLOSE_CODES.FORBIDDEN, 'device_not_active');
     }
 
     this.connections.set(client, {
@@ -217,11 +233,28 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
     );
 
     if (!stillConnected) {
-      await this.prisma.device.update({
-        where: { id: existing.did },
+      await this.prisma.device.updateMany({
+        where: {
+          id: existing.did,
+          status: DeviceStatus.ONLINE,
+        },
         data: {
           status: DeviceStatus.ACTIVE,
           lastSeenAt: new Date(),
+        },
+      });
+
+      await this.prisma.signerRequest.updateMany({
+        where: {
+          deviceId: existing.did,
+          expiresAt: { gt: new Date() },
+          status: {
+            in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+          },
+        },
+        data: {
+          status: SignerRequestStatus.PENDING,
+          deviceId: null,
         },
       });
 
@@ -294,7 +327,9 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
     const updated = await this.prisma.signerRequest.updateMany({
       where: {
         requestId: message.request_id,
-        status: SignerRequestStatus.PENDING,
+        status: {
+          in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+        },
         expiresAt: { gt: now },
         deviceId: connection.did,
       },
@@ -329,7 +364,9 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
     const updated = await this.prisma.signerRequest.updateMany({
       where: {
         requestId: message.request_id,
-        status: SignerRequestStatus.PENDING,
+        status: {
+          in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+        },
         expiresAt: { gt: now },
         deviceId: connection.did,
       },
@@ -389,10 +426,11 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     overrideTarget?: ConnectionContext,
   ): Promise<void> {
+    const userConnections = this.getConnectionsForUser(userId);
     const target =
       overrideTarget ??
-      (this.getConnectionsForUser(userId).find((connection) => connection.role === DeviceRole.PRIMARY) ??
-        this.getConnectionsForUser(userId)[0]);
+      (userConnections.find((connection) => connection.role === DeviceRole.PRIMARY) ??
+        userConnections[0]);
 
     if (!target || target.socket.readyState !== WebSocket.OPEN) {
       return;
@@ -401,7 +439,9 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
     const pendingRequests = await this.prisma.signerRequest.findMany({
       where: {
         userId,
-        status: SignerRequestStatus.PENDING,
+        status: {
+          in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+        },
         expiresAt: { gt: new Date() },
         OR: [{ deviceId: null }, { deviceId: target.did }],
       },
@@ -458,6 +498,18 @@ export class SignerGatewayService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.sendMessage(target.socket, outbound);
+      await this.prisma.signerRequest.updateMany({
+        where: {
+          id: request.id,
+          deviceId: target.did,
+          status: {
+            in: [SignerRequestStatus.PENDING, SignerRequestStatus.DELIVERED],
+          },
+        },
+        data: {
+          status: SignerRequestStatus.DELIVERED,
+        },
+      });
       this.markPushed(request.requestId);
     }
   }

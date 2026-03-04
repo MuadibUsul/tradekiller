@@ -1,10 +1,5 @@
 import { Logger } from '@nestjs/common';
-import {
-  ConnectedSocket,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-  WebSocketGateway,
-} from '@nestjs/websockets';
+import { OnGatewayConnection, OnGatewayDisconnect, WebSocketGateway } from '@nestjs/websockets';
 import { WS_CLOSE_CODES, WS_SIGNER_PATH } from '@pm-quant/shared';
 import type { IncomingMessage } from 'node:http';
 import WebSocket, { type RawData } from 'ws';
@@ -30,10 +25,7 @@ export class SignerGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly service: SignerGatewayService) {}
 
-  async handleConnection(
-    @ConnectedSocket() client: WebSocket,
-    ...args: unknown[]
-  ): Promise<void> {
+  handleConnection = async (client: WebSocket, ...args: unknown[]): Promise<void> => {
     const request = args[0] as IncomingMessage | undefined;
     const accessToken = getAccessToken(request);
 
@@ -63,9 +55,9 @@ export class SignerGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.logger.error('Failed to register signer connection', error as Error);
       client.close(WS_CLOSE_CODES.UNAUTHORIZED, 'invalid_token');
     }
-  }
+  };
 
-  async handleDisconnect(@ConnectedSocket() client: WebSocket): Promise<void> {
+  handleDisconnect = async (client: WebSocket): Promise<void> => {
     await this.service.unregisterConnection(client);
-  }
+  };
 }
