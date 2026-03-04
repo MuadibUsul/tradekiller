@@ -32,9 +32,18 @@ CREATE TABLE IF NOT EXISTS "market_metrics" (
   CONSTRAINT "market_metrics_pkey" PRIMARY KEY ("id")
 );
 
-ALTER TABLE "market_metrics"
-ADD CONSTRAINT IF NOT EXISTS "market_metrics_userId_fkey"
-FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'market_metrics_userId_fkey'
+  ) THEN
+    ALTER TABLE "market_metrics"
+    ADD CONSTRAINT "market_metrics_userId_fkey"
+    FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS "market_metrics_userId_marketId_key"
 ON "market_metrics"("userId", "marketId");
