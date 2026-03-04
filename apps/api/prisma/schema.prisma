@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EnrollSessionStatus {
+  PENDING
+  APPROVED
+  EXCHANGED
+  EXPIRED
+  REVOKED
+}
+
+enum DeviceStatus {
+  PENDING
+  ACTIVE
+  ONLINE
+  REVOKED
+}
+
+enum DeviceRole {
+  PRIMARY
+  SECONDARY
+}
+
+enum StrategyStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum OrderSide {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  LIMIT
+  MARKET
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_SIGN
+  SIGNED
+  SUBMITTED
+  ACK
+  PARTIAL_FILLED
+  FILLED
+  CANCELED
+  REJECTED
+  FAILED
+}
+
+enum SignerRequestStatus {
+  PENDING
+  DELIVERED
+  SIGNED
+  DENIED
+  EXPIRED
+  FAILED
+}
+
+enum ExecutionStatus {
+  PENDING
+  LOCKED
+  ACK
+  FILLED
+  FAILED
+}
+
+enum AuditActorType {
+  USER
+  DEVICE
+  SYSTEM
+}
+
+enum AuditAction {
+  LOGIN
+  DEV_LOGIN
+  SESSION_REFRESH
+  LOGOUT
+  ENROLL_SESSION_CREATE
+  ENROLL_SESSION_APPROVE
+  DEVICE_EXCHANGE
+  DEVICE_TOKEN_REFRESH
+  DEVICE_REVOKE
+  WHITELIST_UPDATE
+  STRATEGY_CREATE
+  STRATEGY_UPDATE
+  STRATEGY_PAUSE
+  STRATEGY_RESUME
+  RISK_CONFIG_UPDATE
+  RISK_GATE_DECISION
+  SIGNER_REQUEST_CREATE
+  SIGNER_REQUEST_SIGNED
+  SIGNER_REQUEST_DENIED
+  SIGNER_ONLINE
+  SIGNER_OFFLINE
+  SIGNER_SIGNED
+  SIGNER_DENIED
+  ORDER_SUBMIT
+  ORDER_CANCEL
+  ORDER_CANCEL_ALL
+  SYSTEM_PAUSE_ALL
+}
+
+model User {
+  id             String            @id @default(cuid())
+  email          String            @unique
+  displayName    String?
+  otpEnabled     Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  sessions       Session[]
+  enrollSessions EnrollSession[]
+  devices        Device[]
+  whitelist      WhitelistMarket[]
+  strategies     Strategy[]
+  riskConfigs    RiskConfig[]
+  positions      Position[]
+  orders         Order[]
+  signerRequests SignerRequest[]
+  auditLogs      AuditLog[]
+  marketMetrics  MarketMetric[]
+
+  @@map("users")
+}
+
+model MarketMetric {
+  id           String   @id @default(cuid())
+  userId       String
+  marketId     String
+  pMkt         Decimal  @db.Decimal(10, 6)
+  lastTickAge  Decimal  @db.Decimal(10, 3)
+  spreadPct    Decimal  @db.Decimal(10, 6)
+  topLiquidity Decimal  @db.Decimal(20, 8)
+  jumpPct1m    Decimal  @db.Decimal(10, 6)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketId])
+  @@index([marketId, updatedAt])
+  @@map("market_metrics")
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String
+  userAgent        String?
+  ipAddress        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model EnrollSession {
+  id              String              @id @default(cuid())
+  userId          String
+  code            String              @unique
+  status          EnrollSessionStatus @default(PENDING)
+  deviceName      String?
+  devicePublicKey String?
+  verifierHash    String?
+  expiresAt       DateTime
+  approvedAt      DateTime?
+  exchangedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([expiresAt])
+  @@map("enroll_sessions")
+}
+
+model Device {
+  id             String          @id @default(cuid())
+  userId         String
+  name           String
+  status         DeviceStatus    @default(PENDING)
+  role           DeviceRole      @default(SECONDARY)
+  publicKey      String?
+  lastSeenAt     DateTime?
+  enrolledAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokens         DeviceToken[]
+  signerRequests SignerRequest[]
+  auditLogs      AuditLog[]
+
+  @@index([userId, status])
+  @@map("devices")
+}
+
+model DeviceToken {
+  id               String    @id @default(cuid())
+  deviceId         String
+  refreshTokenHash String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  device           Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([expiresAt])
+  @@map("device_tokens")
+}
+
+model WhitelistMarket {
+  id        String   @id @default(cuid())
+  userId    String
+  marketId  String
+  enabled   Boolean  @default(true)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketId])
+  @@index([userId])
+  @@map("whitelist_markets")
+}
+
+model Strategy {
+  id           String         @id @default(cuid())
+  userId       String
+  name         String
+  status       StrategyStatus @default(PAUSED)
+  pausedReason String?
+  config       Json?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  riskConfigs  RiskConfig[]
+  orders       Order[]
+
+  @@unique([userId, name])
+  @@index([userId, status])
+  @@map("strategies")
+}
+
+model RiskConfig {
+  id                                String    @id @default(cuid())
+  userId                            String
+  strategyId                        String?
+  riskLevel                         RiskLevel @default(MEDIUM)
+  equity                            Decimal   @db.Decimal(20, 8)
+  dailyLossCircuitBreakerPct        Decimal   @default(0.01) @db.Decimal(8, 6)
+  maxMarketExposurePct              Decimal   @default(0.10) @db.Decimal(8, 6)
+  warnMarketExposurePct             Decimal   @default(0.07) @db.Decimal(8, 6)
+  maxTotalExposurePct               Decimal   @default(0.25) @db.Decimal(8, 6)
+  maxOpenMarkets                    Int       @default(3)
+  confirmOrderNotionalPct           Decimal   @default(0.02) @db.Decimal(8, 6)
+  confirmPostTradeMarketExposurePct Decimal   @default(0.08) @db.Decimal(8, 6)
+  confirmPostTradeTotalExposurePct  Decimal   @default(0.20) @db.Decimal(8, 6)
+  staleTickSeconds                  Int       @default(5)
+  maxSpreadPct                      Decimal   @default(0.025) @db.Decimal(8, 6)
+  maxJumpPct1m                      Decimal   @default(0.06) @db.Decimal(8, 6)
+  minTopLiquidity                   Decimal   @default(50) @db.Decimal(20, 8)
+  maxSlippagePct                    Decimal   @default(0.01) @db.Decimal(8, 6)
+  maxRejectRate2mPct                Decimal   @default(0.20) @db.Decimal(8, 6)
+  maxAuthError2m                    Int       @default(1)
+  safetyReserveMin                  Decimal   @default(50) @db.Decimal(20, 8)
+  safetyReservePct                  Decimal   @default(0.01) @db.Decimal(8, 6)
+  maxEquityDropTodayPct             Decimal   @default(0.008) @db.Decimal(8, 6)
+  createdAt                         DateTime  @default(now())
+  updatedAt                         DateTime  @updatedAt
+  user                              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy                          Strategy? @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([strategyId])
+  @@map("risk_configs")
+}
+
+model Position {
+  id            String   @id @default(cuid())
+  userId        String
+  marketId      String
+  outcomeId     String
+  quantity      Decimal  @db.Decimal(20, 8)
+  avgPrice      Decimal  @db.Decimal(20, 8)
+  notional      Decimal  @db.Decimal(20, 8)
+  unrealizedPnl Decimal  @default(0) @db.Decimal(20, 8)
+  realizedPnl   Decimal  @default(0) @db.Decimal(20, 8)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, marketId])
+  @@index([userId, marketId])
+  @@map("positions")
+}
+
+model Order {
+  id              String         @id @default(cuid())
+  userId          String
+  strategyId      String?
+  marketId        String
+  outcomeId       String
+  side            OrderSide
+  orderType       OrderType      @default(LIMIT)
+  status          OrderStatus    @default(DRAFT)
+  quantity        Decimal        @db.Decimal(20, 8)
+  price           Decimal?       @db.Decimal(20, 8)
+  notional        Decimal        @db.Decimal(20, 8)
+  riskLevel       RiskLevel      @default(MEDIUM)
+  rejectReason    String?
+  externalOrderId String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy        Strategy?      @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  signerRequest   SignerRequest?
+
+  @@index([userId, status])
+  @@index([strategyId])
+  @@index([marketId])
+  @@map("orders")
+}
+
+model SignerRequest {
+  id              String              @id @default(cuid())
+  requestId       String              @unique @default(cuid()) @map("request_id")
+  userId          String
+  deviceId        String?
+  orderId         String?             @unique
+  status          SignerRequestStatus @default(PENDING)
+  payload         Json
+  payloadHash     String
+  requiresConfirm Boolean             @default(false)
+  confirmReasons  String[]            @default([])
+  anomalyFlags    String[]            @default([])
+  display         Json?
+  signature       String?
+  deviceSig       String?
+  denyReason      String?
+  expiresAt       DateTime
+  executionLockAt DateTime?           @map("execution_lock_at")
+  executedAt      DateTime?           @map("executed_at")
+  executionStatus ExecutionStatus     @default(PENDING) @map("execution_status")
+  executionError  String?             @map("execution_error")
+  signedAt        DateTime?           @map("signed_at")
+  respondedAt     DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device          Device?             @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  order           Order?              @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([deviceId, status])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
+  @@index([status, executedAt])
+  @@index([status, executionStatus])
+  @@map("signer_requests")
+}
+
+model AuditLog {
+  id           String         @id @default(cuid())
+  userId       String?
+  deviceId     String?
+  actorType    AuditActorType
+  action       AuditAction
+  resourceType String?
+  resourceId   String?
+  metadata     Json?
+  createdAt    DateTime       @default(now())
+  user         User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  device       Device?        @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([deviceId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

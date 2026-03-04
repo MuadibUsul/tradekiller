@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: pm-quant-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-pm_quant}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-pm_quant}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: pm-quant-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: pm-quant-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -lc "pnpm --filter @pm-quant/api prisma:migrate &&
+      pnpm --filter @pm-quant/api start"
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://postgres:postgres@postgres:5432/pm_quant?schema=public}
+      REDIS_URL: ${REDIS_URL_DOCKER:-redis://redis:6379}
+      WEB_JWT_SECRET: ${WEB_JWT_SECRET:-dev-web-jwt-secret}
+      DEVICE_JWT_SECRET: ${DEVICE_JWT_SECRET:-dev-device-jwt-secret}
+      API_BASE_URL: ${API_BASE_URL:-https://api.localhost}
+      SIGNER_CALLBACK_URI: ${SIGNER_CALLBACK_URI:-signer://callback}
+    expose:
+      - "4000"
+
+  signer-gateway:
+    build:
+      context: .
+      dockerfile: apps/signer-gateway/Dockerfile
+    container_name: pm-quant-signer-gateway
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://postgres:postgres@postgres:5432/pm_quant?schema=public}
+      DEVICE_JWT_SECRET: ${DEVICE_JWT_SECRET:-dev-device-jwt-secret}
+      SIGNER_GATEWAY_PORT: "4100"
+    expose:
+      - "4100"
+
+  market-worker:
+    build:
+      context: .
+      dockerfile: apps/market-worker/Dockerfile
+    container_name: pm-quant-market-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://postgres:postgres@postgres:5432/pm_quant?schema=public}
+      MARKET_WORKER_INTERVAL_MS: ${MARKET_WORKER_INTERVAL_MS:-1000}
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://api.localhost}
+    container_name: pm-quant-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://api.localhost}
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2.9-alpine
+    container_name: pm-quant-caddy
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_started
+      signer-gateway:
+        condition: service_started
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-app.localhost}
+      API_DOMAIN: ${API_DOMAIN:-api.localhost}
+      WS_DOMAIN: ${WS_DOMAIN:-ws.localhost}
+      CADDY_EMAIL: ${CADDY_EMAIL:-devnull@example.com}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

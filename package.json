@@ -1,0 +1,25 @@
+{
+  "name": "pm-quant-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "build": "corepack pnpm -r --filter \"@pm-quant/*\" run build",
+    "dev": "corepack pnpm -r --parallel --filter \"@pm-quant/*\" run dev",
+    "lint": "corepack pnpm -r --filter \"@pm-quant/*\" run lint",
+    "db:up": "docker compose up -d postgres redis",
+    "db:migrate": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public corepack pnpm --filter @pm-quant/api run prisma:migrate && cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public corepack pnpm --filter @pm-quant/api run prisma:generate",
+    "api:dev": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public REDIS_URL=redis://localhost:6380 DEVICE_JWT_SECRET=dev-device-jwt-secret corepack pnpm --filter @pm-quant/api dev",
+    "web:dev": "cross-env NEXT_PUBLIC_API_BASE_URL=http://localhost:4000 corepack pnpm --filter @pm-quant/web dev",
+    "market-worker:dev": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public corepack pnpm --filter @pm-quant/market-worker dev",
+    "signer-gateway:dev": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public DEVICE_JWT_SECRET=dev-device-jwt-secret SIGNER_GATEWAY_PORT=4100 corepack pnpm --filter @pm-quant/signer-gateway dev",
+    "signer-electron:dev": "corepack pnpm --filter @pm-quant/signer-electron dev",
+    "api:test:exactly-once": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5433/pm_quant?schema=public corepack pnpm --filter @pm-quant/api run test:exactly-once"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "eslint": "^9.31.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.8.3"
+  }
+}

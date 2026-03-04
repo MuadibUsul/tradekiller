@@ -1,0 +1,107 @@
+:root {
+  color: #0d1b2a;
+  background: #f4f8fb;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #d6e0e8;
+  border-radius: 10px;
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+input,
+textarea,
+button {
+  font: inherit;
+}
+
+input,
+textarea {
+  border: 1px solid #b9c8d3;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #0b5fa8;
+  color: #fff;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(7, 24, 39, 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 9999;
+}
+
+.modal {
+  width: min(640px, 94vw);
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  border: 2px solid #19324a;
+}
+
+.modal .hash {
+  font-family: 'Consolas', monospace;
+  word-break: break-all;
+}
+
+.modal .approve {
+  background: #18743f;
+}
+
+.modal .deny {
+  background: #b42318;
+}

@@ -1,0 +1,19 @@
+{
+  email {$CADDY_EMAIL}
+}
+
+{$APP_DOMAIN} {
+  tls internal
+  reverse_proxy web:3000
+}
+
+{$API_DOMAIN} {
+  tls internal
+  reverse_proxy api:4000
+}
+
+{$WS_DOMAIN} {
+  tls internal
+  reverse_proxy signer-gateway:4100
+}
+
